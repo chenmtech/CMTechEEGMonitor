@@ -16,6 +16,8 @@
 // Position of EEG data packet in attribute array
 #define EEG_PACK_VALUE_POS            2
 
+
+
 // EEG service
 CONST uint8 EEGServUUID[ATT_UUID_SIZE] =
 { 
@@ -67,7 +69,7 @@ static uint16 eegSampleRate = 250;
 
 // Lead Type Characteristic
 static uint8 eegLeadTypeProps = GATT_PROP_READ;
-static uint8 eegLeadType = 0x01;
+static uint8 eegLeadType = LEADTYPE_I;
 
 
 /*********************************************************************
