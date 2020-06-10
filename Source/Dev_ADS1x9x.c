@@ -67,8 +67,8 @@ static int ecgData;
 
 static void execute(uint8 cmd); // execute command
 static void setRegsAsNormalECGSignal(); // set registers as outputing normal ECG signal
-//static void readOneSampleUsingADS1291(void); // read one data with ADS1291
-static void readOneSampleUsingADS1191(void); // read one data with ADS1191
+static void readOneSampleUsingADS1291(void); // read one data with ADS1291
+//static void readOneSampleUsingADS1191(void); // read one data with ADS1191
 
 // ADS init
 extern void ADS1x9x_Init(ADS_DataCB_t pfnADS_DataCB_t)
@@ -248,39 +248,65 @@ __interrupt void PORT0_ISR(void)
     P0IFG &= 0xFD; //~(1<<1);   //clear P0_1 IFG 
     P0IF = 0;   //clear P0 interrupt flag
 
-#if defined(ADS1291)    
     readOneSampleUsingADS1291();
-#elif defined(ADS1191)
-    readOneSampleUsingADS1191();
-#endif
   //}
   
   HAL_EXIT_ISR();   // Re-enable interrupts.  
 }
 
 // ADS1291: high precise(24bits) chip with only one channel
-/*
 static void readOneSampleUsingADS1291(void)
 {  
-  ADS_CS_LOW();
-  uint8 data[3]; // received channel 1 data buffer
-  
-  SPI_ADS_SendByte(ADS_DUMMY_CHAR);
-  SPI_ADS_SendByte(ADS_DUMMY_CHAR);
-  SPI_ADS_SendByte(ADS_DUMMY_CHAR);  
-  
-  data[2] = SPI_ADS_SendByte(ADS_DUMMY_CHAR);   //MSB
-  data[1] = SPI_ADS_SendByte(ADS_DUMMY_CHAR);
-  data[0] = SPI_ADS_SendByte(ADS_DUMMY_CHAR);   //LSB
-  
-  ADS_CS_HIGH();
-  
-  int16 ecg = (int16)((data[1] & 0x00FF) | ((data[2] & 0x00FF) << 8));
-   
-  pfnADSDataCB(ecg);
-}
-*/
+//  ADS_CS_LOW();
+//  uint8 data[3]; // received channel 1 data buffer
+//  
+//  SPI_ADS_SendByte(ADS_DUMMY_CHAR);
+//  SPI_ADS_SendByte(ADS_DUMMY_CHAR);
+//  SPI_ADS_SendByte(ADS_DUMMY_CHAR);  
+//  
+//  data[2] = SPI_ADS_SendByte(ADS_DUMMY_CHAR);   //MSB
+//  data[1] = SPI_ADS_SendByte(ADS_DUMMY_CHAR);
+//  data[0] = SPI_ADS_SendByte(ADS_DUMMY_CHAR);   //LSB
+//  
+//  ADS_CS_HIGH();
+//  
+//  int16 ecg = (int16)((data[1] & 0x00FF) | ((data[2] & 0x00FF) << 8));
+//   
+//  pfnADSDataCB(ecg);
 
+  uint8 data1,data2,data3;
+  
+  SPI_SEND(ADS_DUMMY_CHAR); 
+  while (!U1TX_BYTE);
+  U1TX_BYTE = 0;
+  
+  SPI_SEND(ADS_DUMMY_CHAR); 
+  while (!U1TX_BYTE);
+  U1TX_BYTE = 0;
+  
+  SPI_SEND(ADS_DUMMY_CHAR); 
+  while (!U1TX_BYTE);
+  U1TX_BYTE = 0;
+  
+  SPI_SEND(ADS_DUMMY_CHAR); 
+  while (!U1TX_BYTE);
+  U1TX_BYTE = 0;
+  data1 = U1DBUF;
+  
+  SPI_SEND(ADS_DUMMY_CHAR); 
+  while (!U1TX_BYTE);
+  U1TX_BYTE = 0;  
+  data2 = U1DBUF;   
+  
+  SPI_SEND(ADS_DUMMY_CHAR); 
+  while (!U1TX_BYTE);
+  U1TX_BYTE = 0;  
+  data3 = U1DBUF; 
+   
+  pfnADSDataCB(data1, data2, data3);
+}
+
+/*
 // ADS1191: low precise(16bits) chip with only one channel
 static void readOneSampleUsingADS1191(void)
 {  
@@ -317,3 +343,4 @@ static void readOneSampleUsingADS1191(void)
    
   pfnADSDataCB(ecgData);
 }
+*/

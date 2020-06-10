@@ -1,65 +1,47 @@
 /*
- * App_HRFunc.h : Heart Rate application Function Model source file
+ * App_EEGFunc.h : EEG application Function Model source file
  * Written by Chenm
  */
 
 #include "App_EEGFunc.h"
 #include "CMUtil.h"
 #include "Dev_ADS1x9x.h"
-#include "QRSDET.h"
 #include "Service_EEGMonitor.h"
-#include "service_ecg.h"
+#include "service_EEG.h"
 #include "CMTechEEGMonitor.h"
 
 
-#define ECG_PACK_BYTE_NUM 19 // byte number per ecg packet, 1+9*2
-#define ECG_MAX_PACK_NUM 255 // max packet num
-#define RRBUF_LEN 9 // the length of rrbuf
+#define EEG_PACK_BYTE_NUM 19 // byte number per eeg packet, 1+6*3
+#define EEG_MAX_PACK_NUM 255 // max packet num
 
 static uint8 taskId; // taskId of application
 
-// is the heart rate calculated?
-static bool hrCalc = false;
-// the flag of the initial beat
-static uint8 initBeat = 1 ;
-// RR interval buffer, the max number in the buffer is 9
-static uint16 rrBuf[RRBUF_LEN] = {0};
-// the current number in rrBuf
-static uint8 rrNum = 0;
-// HR notification struct
-static attHandleValueNoti_t hrNoti;
-
-// is the ecg data processed
-static bool ecgProcess = false;
-// is the ecg data sent?
-static bool ecgSend = false;
-// the number of the current ecg data packet, from 0 to ECG_MAX_PACK_NUM
+// is the eeg data sent?
+static bool eegSend = false;
+// the number of the current eeg data packet, from 0 to EEG_MAX_PACK_NUM
 static uint8 pckNum = 0;
-// ecg packet buffer
-static uint8 ecgBuff[ECG_PACK_BYTE_NUM] = {0};
-// pointer to the ecg buff
-static uint8* pEcgBuff;
-// ecg packet structure sent out
-static attHandleValueNoti_t ecgNoti;
+// eeg packet buffer
+static uint8 eegBuff[EEG_PACK_BYTE_NUM] = {0};
+// pointer to the eeg buff
+static uint8* pEegBuff;
+// eeg packet structure sent out
+static attHandleValueNoti_t eegNoti;
 
-static void processEcgSignal(int16 x);
-static void saveEcgSignal(int16 ecg);
-static uint16 median(uint16 *array, uint8 datnum);
+static void processEegSignal(uint8 data1, uint8 data2, uint8 data3);
+static void saveEegSignal(uint8 data1, uint8 data2, uint8 data3);
 //static void processTestSignal(int16 x);
 
-extern void HRFunc_Init(uint8 taskID)
+extern void EEGFunc_Init(uint8 taskID)
 { 
   taskId = taskID;
   
   // initilize the ADS1x9x and set the data process callback function
-  ADS1x9x_Init(processEcgSignal); 
+  ADS1x9x_Init(processEegSignal); 
   
   delayus(1000);
-  
-  QRSDet(0, 1);
 }
 
-extern void HRFunc_SetEcgSampling(bool start)
+extern void EEGFunc_SetEegSampling(bool start)
 {
   if(start)
   {
@@ -77,174 +59,48 @@ extern void HRFunc_SetEcgSampling(bool start)
   }
 }
 
-extern void HRFunc_SetHRCalcing(bool calc)
-{
-  if(calc)
-  {
-    initBeat = 1;
-    rrNum = 0; 
-    ecgProcess = false;
-  }
-  hrCalc = calc;
-}
-
-extern void HRFunc_SetEcgSending(bool send)
+extern void EEGFunc_SetEegSending(bool send)
 {
   if(send)
   {
     pckNum = 0;
-    pEcgBuff = ecgBuff;
-    osal_clear_event(taskId, HRM_ECG_NOTI_EVT);
+    pEegBuff = eegBuff;
+    osal_clear_event(taskId, EEG_PACK_NOTI_EVT);
   }
-  ecgSend = send;
+  eegSend = send;
 }
 
-extern void HRFunc_SendEcgPacket(uint16 connHandle)
+extern void EEGFunc_SendEegPacket(uint16 connHandle)
 {
-  ECG_PacketNotify( connHandle, &ecgNoti );
+  EEG_PacketNotify( connHandle, &eegNoti );
 }
 
-// send HR packet
-extern void HRFunc_SendHRPacket(uint16 connHandle)
+static void processEegSignal(uint8 data1, uint8 data2, uint8 data3)
 {
-  if(rrNum == 0) return;  // No RR interval, return
-  
-  uint8* p = hrNoti.value;
-  uint8* pTmp = p;
-  
-  //////// Two methods to calculate BPM
-  // 1. using average method
-  /*
-  int32 sum = 0;
-  for(i = 0; i < rrNum; i++)
+  if(eegSend) // need send ecg
   {
-    sum += rrBuf[i];
-  }
-  int16 BPM = (7500L*rrNum + (sum>>1))/sum; // BPM = (60*1000ms)/(RRInterval*8ms) = 7500/RRInterval, the round op is done
-  */
-  
-  // 2. using median method
-  uint16 rrMedian = ((rrNum == 1) ? rrBuf[0] : median(rrBuf, rrNum));
-  int16 BPM = 7500/rrMedian; // BPM = (60*1000ms)/(RRInterval*8ms) = 7500/RRInterval
-  ////////////////////////////////////////
-  
-  if(BPM > 255) BPM = 255;
-  
-  ////////Three different way to output HR data
-  
-  //1. bpm only
-  *p++ = 0x00;
-  *p++ = (uint8)BPM;
-  
-
-  //2. bpm and RRInterval
-  /*
-  *p++ = 0x10;
-  *p++ = (uint8)BPM;
-  uint16 MS1024 = 0;
-  for(int i = 0; i < rrNum; i++)
-  {
-    // MS1024 = (uint16)(rrBuf[i]*8.192); // transform into the number with 1/1024 second unit, which is required in BLE.
-    // *p++ = LO_UINT16(MS1024);
-    // *p++ = HI_UINT16(MS1024);
-    *p++ = LO_UINT16(rrBuf[i]);
-    *p++ = HI_UINT16(rrBuf[i]);
-  }
-  */
-  
-  /*
-  // 3. bpm and Q&N as RRInterval for debug
-  *p++ = 0x10;
-  *p++ = (uint8)BPM;
-  int* pQRS = getQRSBuffer();
-  int* pNoise = getNoiseBuffer();
-  *p++ = LO_UINT16(*pQRS);
-  *p++ = HI_UINT16(*pQRS++);
-  *p++ = LO_UINT16(*pQRS);
-  *p++ = HI_UINT16(*pQRS++);
-  *p++ = LO_UINT16(*pQRS);
-  *p++ = HI_UINT16(*pQRS++);
-  *p++ = LO_UINT16(*pQRS);
-  *p++ = HI_UINT16(*pQRS++);
-  *p++ = LO_UINT16(*pNoise);
-  *p++ = HI_UINT16(*pNoise++);
-  *p++ = LO_UINT16(*pNoise);
-  *p++ = HI_UINT16(*pNoise++);
-  *p++ = LO_UINT16(*pNoise);
-  *p++ = HI_UINT16(*pNoise++);
-  *p++ = LO_UINT16(*pNoise);
-  *p++ = HI_UINT16(*pNoise++);  
-  */
-  
-  hrNoti.len = (uint8)(p-pTmp);
-  HRM_MeasNotify( connHandle, &hrNoti );
-  rrNum = 0;
-}
-
-static void processEcgSignal(int16 x)
-{
-  if(ecgProcess && hrCalc) // need calculate HR
-  {
-    if(QRSDet(x, 0))
-    {
-      if(initBeat) 
-      {
-        initBeat = 0;
-      }
-      else
-      {
-        rrBuf[rrNum++] = getRRInterval();
-        if(rrNum >= 9) rrNum = 8;
-      }
-    }
-  }
-  
-  if(ecgSend) // need send ecg
-  {
-    saveEcgSignal(x);
+    saveEegSignal(data1, data2, data3);
   }
 }
 
-static void saveEcgSignal(int16 ecg)
+static void saveEegSignal(uint8 data1, uint8 data2, uint8 data3)
 {
-  if(pEcgBuff == ecgBuff)
+  if(pEegBuff == eegBuff)
   {
-    *pEcgBuff++ = pckNum;
-    pckNum = (pckNum == ECG_MAX_PACK_NUM) ? 0 : pckNum+1;
+    *pEegBuff++ = pckNum;
+    pckNum = (pckNum == EEG_MAX_PACK_NUM) ? 0 : pckNum+1;
   }
-  *pEcgBuff++ = LO_UINT16(ecg);  
-  *pEcgBuff++ = HI_UINT16(ecg);
+  *pEegBuff++ = data1;  
+  *pEegBuff++ = data2;
+  *pEegBuff++ = data3;
   
-  if(pEcgBuff-ecgBuff >= ECG_PACK_BYTE_NUM)
+  if(pEegBuff-eegBuff >= EEG_PACK_BYTE_NUM)
   {
-    osal_memcpy(ecgNoti.value, ecgBuff, ECG_PACK_BYTE_NUM);
-    ecgNoti.len = ECG_PACK_BYTE_NUM;
-    osal_set_event(taskId, HRM_ECG_NOTI_EVT);
-    pEcgBuff = ecgBuff;
+    osal_memcpy(eegNoti.value, eegBuff, EEG_PACK_BYTE_NUM);
+    eegNoti.len = EEG_PACK_BYTE_NUM;
+    osal_set_event(taskId, EEG_PACK_NOTI_EVT);
+    pEegBuff = eegBuff;
   }
-}
-
-static uint16 median(uint16 *array, uint8 datnum)
-{
-  uint8 i, j;
-  uint8 half = ((datnum-2)>>1);
-  uint16 tmp, sort[RRBUF_LEN] ;
-  osal_memcpy(sort, array, 2*datnum); // the length unit is BYTE not uint16
-  // sort array using up-order
-  // only half of data need to be sorted to find out the median
-  for(i = 0; i <= half; ++i)
-  {
-    for(j = i+1; j < datnum; j++)
-    {
-      if(sort[j] > sort[i])
-      {
-        tmp = sort[i];
-        sort[i] = sort[j];
-        sort[j] = tmp;
-      }
-    }
-  }
-  return(sort[half]);
 }
 
 //static void processTestSignal(int16 x)

@@ -1,5 +1,5 @@
 /**
-* ecg service source file: providing the ecg-related info and sending the ecg data packet
+* eeg service source file: providing the eeg-related info and sending the eeg data packet
 */
 
 #include "bcomdef.h"
@@ -10,111 +10,102 @@
 #include "gatt_uuid.h"
 #include "gattservapp.h"
 #include "CMUtil.h"
-#include "Service_Ecg.h"
+#include "Service_EEG.h"
 #include "CMTechEEGMonitor.h"
 
-// Position of ECG data packet in attribute array
-#define ECG_PACK_VALUE_POS            2
+// Position of EEG data packet in attribute array
+#define EEG_PACK_VALUE_POS            2
 
-// Ecg service
-CONST uint8 ECGServUUID[ATT_UUID_SIZE] =
+// EEG service
+CONST uint8 EEGServUUID[ATT_UUID_SIZE] =
 { 
-  CM_UUID(ECG_SERV_UUID)
+  CM_UUID(EEG_SERV_UUID)
 };
 
-// Ecg Data Packet characteristic
-CONST uint8 ECGPackUUID[ATT_UUID_SIZE] =
+// EEG Data Packet characteristic
+CONST uint8 EEGPackUUID[ATT_UUID_SIZE] =
 { 
-  CM_UUID(ECG_PACK_UUID)
+  CM_UUID(EEG_PACK_UUID)
 };
 
 // 1mV calibration characteristic
-CONST uint8 ECG1mVCaliUUID[ATT_UUID_SIZE] =
+CONST uint8 EEG1mVCaliUUID[ATT_UUID_SIZE] =
 { 
-  CM_UUID(ECG_1MV_CALI_UUID)
+  CM_UUID(EEG_1MV_CALI_UUID)
 };
 
 // Sample rate characteristic
-CONST uint8 ECGSampleRateUUID[ATT_UUID_SIZE] =
+CONST uint8 EEGSampleRateUUID[ATT_UUID_SIZE] =
 { 
-  CM_UUID(ECG_SAMPLE_RATE_UUID)
+  CM_UUID(EEG_SAMPLE_RATE_UUID)
 };
 
 // Lead Type characteristic
-CONST uint8 ECGLeadTypeUUID[ATT_UUID_SIZE] =
+CONST uint8 EEGLeadTypeUUID[ATT_UUID_SIZE] =
 { 
-  CM_UUID(ECG_LEAD_TYPE_UUID)
+  CM_UUID(EEG_LEAD_TYPE_UUID)
 };
 
-// Work MOde characteristic
-CONST uint8 ECGWorkModeUUID[ATT_UUID_SIZE] =
-{ 
-  CM_UUID(ECG_WORK_MODE_UUID)
-};
-
-static ECGServiceCBs_t* ecgServiceCBs;
+static EEGServiceCBs_t* eegServiceCBs;
 
 // Ecg Service attribute
-static CONST gattAttrType_t ecgService = { ATT_UUID_SIZE, ECGServUUID };
+static CONST gattAttrType_t eegService = { ATT_UUID_SIZE, EEGServUUID };
 
-// Ecg Data Packet Characteristic
+// EEG Data Packet Characteristic
 // Note: the characteristic value is not stored here
-static uint8 ecgPackProps = GATT_PROP_NOTIFY;
-static uint8 ecgPack = 0;
-static gattCharCfg_t ecgPackClientCharCfg[GATT_MAX_NUM_CONN];
+static uint8 eegPackProps = GATT_PROP_NOTIFY;
+static uint8 eegPack = 0;
+static gattCharCfg_t eegPackClientCharCfg[GATT_MAX_NUM_CONN];
 
 // 1mV Calibration Characteristic
-static uint8 ecg1mVCaliProps = GATT_PROP_READ;
-static uint16 ecg1mVCali = 0;
+static uint8 eeg1mVCaliProps = GATT_PROP_READ;
+static uint16 eeg1mVCali = 0;
 
 // Sample Rate Characteristic
-static uint8 ecgSampleRateProps = GATT_PROP_READ;
-static uint16 ecgSampleRate = 250;
+static uint8 eegSampleRateProps = GATT_PROP_READ;
+static uint16 eegSampleRate = 250;
 
 // Lead Type Characteristic
-static uint8 ecgLeadTypeProps = GATT_PROP_READ;
-static uint8 ecgLeadType = ECG_LEAD_TYPE_I;
+static uint8 eegLeadTypeProps = GATT_PROP_READ;
+static uint8 eegLeadType = 0x01;
 
-// Work mode Characteristic
-static uint8 ecgWorkModeProps = GATT_PROP_READ | GATT_PROP_WRITE;
-static uint8 ecgWorkMode = 0x00;
 
 /*********************************************************************
  * Profile Attributes - Table
  */
 
-static gattAttribute_t ECGAttrTbl[] = 
+static gattAttribute_t EEGAttrTbl[] = 
 {
-  // Ecg Service
+  // EEG Service
   { 
     { ATT_BT_UUID_SIZE, primaryServiceUUID }, /* type */
     GATT_PERMIT_READ,                         /* permissions */
     0,                                        /* handle */
-    (uint8 *)&ecgService                      /* pValue */
+    (uint8 *)&eegService                      /* pValue */
   },
 
-    // 1. Ecg Data Packet Declaration
+    // 1. EEG Data Packet Declaration
     { 
       { ATT_BT_UUID_SIZE, characterUUID },
       GATT_PERMIT_READ, 
       0,
-      &ecgPackProps 
+      &eegPackProps 
     },
 
-      // Ecg Data Packet Value
+      // EEG Data Packet Value
       { 
-        { ATT_UUID_SIZE, ECGPackUUID },
+        { ATT_UUID_SIZE, EEGPackUUID },
         0, 
         0, 
-        &ecgPack 
+        &eegPack 
       },
 
-      // Ecg Data Packet Client Characteristic Configuration
+      // EEG Data Packet Client Characteristic Configuration
       { 
         { ATT_BT_UUID_SIZE, clientCharCfgUUID },
         GATT_PERMIT_READ | GATT_PERMIT_WRITE, 
         0, 
-        (uint8 *) &ecgPackClientCharCfg 
+        (uint8 *) &eegPackClientCharCfg 
       },      
 
     // 2. 1mV Calibration Declaration
@@ -122,15 +113,15 @@ static gattAttribute_t ECGAttrTbl[] =
       { ATT_BT_UUID_SIZE, characterUUID },
       GATT_PERMIT_READ, 
       0,
-      &ecg1mVCaliProps 
+      &eeg1mVCaliProps 
     },
 
       // 1mV Calibration Value
       { 
-        { ATT_UUID_SIZE, ECG1mVCaliUUID },
+        { ATT_UUID_SIZE, EEG1mVCaliUUID },
         GATT_PERMIT_READ, 
         0, 
-        (uint8*)&ecg1mVCali 
+        (uint8*)&eeg1mVCali 
       },
 
     // 3. Sample Rate Declaration
@@ -138,15 +129,15 @@ static gattAttribute_t ECGAttrTbl[] =
       { ATT_BT_UUID_SIZE, characterUUID },
       GATT_PERMIT_READ, 
       0,
-      &ecgSampleRateProps 
+      &eegSampleRateProps 
     },
 
       // Sample Rate Value
       { 
-        { ATT_UUID_SIZE, ECGSampleRateUUID },
+        { ATT_UUID_SIZE, EEGSampleRateUUID },
         GATT_PERMIT_READ, 
         0, 
-        (uint8*)&ecgSampleRate 
+        (uint8*)&eegSampleRate 
       },
 
     // 4. Lead Type Declaration
@@ -154,32 +145,16 @@ static gattAttribute_t ECGAttrTbl[] =
       { ATT_BT_UUID_SIZE, characterUUID },
       GATT_PERMIT_READ, 
       0,
-      &ecgLeadTypeProps 
+      &eegLeadTypeProps 
     },
 
       // Lead Type Value
       { 
-        { ATT_UUID_SIZE, ECGLeadTypeUUID },
+        { ATT_UUID_SIZE, EEGLeadTypeUUID },
         GATT_PERMIT_READ, 
         0, 
-        &ecgLeadType 
-      },
-      
-    // 5. Work Mode Declaration
-    { 
-      { ATT_BT_UUID_SIZE, characterUUID },
-      GATT_PERMIT_READ, 
-      0,
-      &ecgWorkModeProps 
-    },
-
-      // Work Mode Value
-      { 
-        { ATT_UUID_SIZE, ECGWorkModeUUID },
-        GATT_PERMIT_READ | GATT_PERMIT_WRITE, 
-        0, 
-        &ecgWorkMode 
-      }      
+        &eegLeadType 
+      } 
 };
 
 static uint8 readAttrCB( uint16 connHandle, gattAttribute_t *pAttr, 
@@ -188,66 +163,62 @@ static bStatus_t writeAttrCB( uint16 connHandle, gattAttribute_t *pAttr,
                                  uint8 *pValue, uint8 len, uint16 offset );
 static void handleConnStatusCB( uint16 connHandle, uint8 changeType );
 
-// Ecg Service Callbacks
-CONST gattServiceCBs_t ecgCBs =
+// EEG Service Callbacks
+CONST gattServiceCBs_t eegCBs =
 {
   readAttrCB,  // Read callback function pointer
   writeAttrCB, // Write callback function pointer
   NULL                   // Authorization callback function pointer
 };
 
-bStatus_t ECG_AddService( uint32 services )
+bStatus_t EEG_AddService( uint32 services )
 {
   uint8 status = SUCCESS;
 
   // Initialize Client Characteristic Configuration attributes
-  GATTServApp_InitCharCfg( INVALID_CONNHANDLE, ecgPackClientCharCfg );
+  GATTServApp_InitCharCfg( INVALID_CONNHANDLE, eegPackClientCharCfg );
   
   VOID linkDB_Register(handleConnStatusCB);
 
-  if ( services & ECG_SERVICE )
+  if ( services & EEG_SERVICE )
   {
     // Register GATT attribute list and CBs with GATT Server App
-    status = GATTServApp_RegisterService( ECGAttrTbl, 
-                                          GATT_NUM_ATTRS( ECGAttrTbl ),
-                                          &ecgCBs );
+    status = GATTServApp_RegisterService( EEGAttrTbl, 
+                                          GATT_NUM_ATTRS( EEGAttrTbl ),
+                                          &eegCBs );
   }
 
   return ( status );
 }
 
-extern void ECG_RegisterAppCBs( ECGServiceCBs_t* pfnServiceCBs )
+extern void EEG_RegisterAppCBs( EEGServiceCBs_t* pfnServiceCBs )
 {
-  ecgServiceCBs = pfnServiceCBs;
+  eegServiceCBs = pfnServiceCBs;
     
   return;
 }
 
-extern bStatus_t ECG_SetParameter( uint8 param, uint8 len, void *value )
+extern bStatus_t EEG_SetParameter( uint8 param, uint8 len, void *value )
 {
   bStatus_t ret = SUCCESS;
   switch ( param )
   {
-     case ECG_PACK_CHAR_CFG:
+     case EEG_PACK_CHAR_CFG:
       // Need connection handle
       //ECGMeasClientCharCfg.value = *((uint16*)value);
       break;      
 
-    case ECG_1MV_CALI:
-      osal_memcpy((uint8*)&ecg1mVCali, value, len);
+    case EEG_1MV_CALI:
+      osal_memcpy((uint8*)&eeg1mVCali, value, len);
       break;
       
-    case ECG_SAMPLE_RATE:
-      osal_memcpy((uint8*)&ecgSampleRate, value, len);
+    case EEG_SAMPLE_RATE:
+      osal_memcpy((uint8*)&eegSampleRate, value, len);
       break;
       
-    case ECG_LEAD_TYPE:  
-      ecgLeadType = *((uint8*)value);
+    case EEG_LEAD_TYPE:  
+      eegLeadType = *((uint8*)value);
       break;
-      
-    case ECG_WORK_MODE:  
-      ecgWorkMode = *((uint8*)value);
-      break;      
 
     default:
       ret = INVALIDPARAMETER;
@@ -257,31 +228,27 @@ extern bStatus_t ECG_SetParameter( uint8 param, uint8 len, void *value )
   return ( ret );
 }
 
-extern bStatus_t ECG_GetParameter( uint8 param, void *value )
+extern bStatus_t EEG_GetParameter( uint8 param, void *value )
 {
   bStatus_t ret = SUCCESS;
   switch ( param )
   {
-    case ECG_PACK_CHAR_CFG:
+    case EEG_PACK_CHAR_CFG:
       // Need connection handle
       //*((uint16*)value) = ECGMeasClientCharCfg.value;
       break;      
 
-    case ECG_1MV_CALI:
-      osal_memcpy(value, (uint8*)&ecg1mVCali, 2);
+    case EEG_1MV_CALI:
+      osal_memcpy(value, (uint8*)&eeg1mVCali, 2);
       break;
       
-    case ECG_SAMPLE_RATE:
-      osal_memcpy(value, (uint8*)&ecgSampleRate, 2);
+    case EEG_SAMPLE_RATE:
+      osal_memcpy(value, (uint8*)&eegSampleRate, 2);
       break;      
       
-    case ECG_LEAD_TYPE:  
-      *((uint8*)value) = ecgLeadType;
+    case EEG_LEAD_TYPE:  
+      *((uint8*)value) = eegLeadType;
       break; 
-      
-    case ECG_WORK_MODE:  
-      *((uint8*)value) = ecgWorkMode;
-      break;      
 
     default:
       ret = INVALIDPARAMETER;
@@ -291,15 +258,15 @@ extern bStatus_t ECG_GetParameter( uint8 param, void *value )
   return ( ret );
 }
 
-extern bStatus_t ECG_PacketNotify( uint16 connHandle, attHandleValueNoti_t *pNoti )
+extern bStatus_t EEG_PacketNotify( uint16 connHandle, attHandleValueNoti_t *pNoti )
 {
-  uint16 value = GATTServApp_ReadCharCfg( connHandle, ecgPackClientCharCfg );
+  uint16 value = GATTServApp_ReadCharCfg( connHandle, eegPackClientCharCfg );
 
   // If notifications enabled
   if ( value & GATT_CLIENT_CFG_NOTIFY )
   {
     // Set the handle
-    pNoti->handle = ECGAttrTbl[ECG_PACK_VALUE_POS].handle;
+    pNoti->handle = EEGAttrTbl[EEG_PACK_VALUE_POS].handle;
   
     // Send the notification
     return GATT_Notification( connHandle, pNoti, FALSE );
@@ -328,14 +295,13 @@ static uint8 readAttrCB( uint16 connHandle, gattAttribute_t *pAttr,
 
   switch(uuid)
   {
-    case ECG_1MV_CALI_UUID:
-    case ECG_SAMPLE_RATE_UUID:
+    case EEG_1MV_CALI_UUID:
+    case EEG_SAMPLE_RATE_UUID:
       *pLen = 2;
        VOID osal_memcpy( pValue, pAttr->pValue, 2 );
        break;
        
-    case ECG_LEAD_TYPE_UUID:
-    case ECG_WORK_MODE_UUID:
+    case EEG_LEAD_TYPE_UUID:
       *pLen = 1;
       pValue[0] = *pAttr->pValue;
       break;
@@ -369,19 +335,11 @@ static bStatus_t writeAttrCB( uint16 connHandle, gattAttribute_t *pAttr,
       {
         uint16 charCfg = BUILD_UINT16( pValue[0], pValue[1] );
 
-        (ecgServiceCBs->pfnEcgServiceCB)( (charCfg == GATT_CFG_NO_OPERATION) ?
-                                ECG_PACK_NOTI_DISABLED :
-                                ECG_PACK_NOTI_ENABLED );
+        (eegServiceCBs->pfnEegServiceCB)( (charCfg == GATT_CFG_NO_OPERATION) ?
+                                EEG_PACK_NOTI_DISABLED :
+                                EEG_PACK_NOTI_ENABLED );
       }
-      break;   
-      
-    case ECG_WORK_MODE_UUID: 
-      if(len == 1 && ecgWorkMode != pValue[0])
-      {
-        ecgWorkMode = pValue[0];
-        (ecgServiceCBs->pfnEcgServiceCB)(ECG_WORK_MODE_CHANGED);
-      }
-      break;
+      break; 
  
     default:
       status = ATT_ERR_ATTR_NOT_FOUND;
@@ -401,7 +359,7 @@ static void handleConnStatusCB( uint16 connHandle, uint8 changeType )
          ( ( changeType == LINKDB_STATUS_UPDATE_STATEFLAGS ) && 
            ( !linkDB_Up( connHandle ) ) ) )
     { 
-      GATTServApp_InitCharCfg( connHandle, ecgPackClientCharCfg );
+      GATTServApp_InitCharCfg( connHandle, eegPackClientCharCfg );
     }
   }
 }

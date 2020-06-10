@@ -277,7 +277,6 @@
           <state>HAL_UART=FALSE</state>
           <state>HAL_KEY=FALSE</state>
           <state>HAL_ADC=TRUE</state>
-          <state>CC2540_MINIDK</state>
         </option>
         <option>
           <name>CCPreprocFile</name>
@@ -6389,7 +6388,7 @@
       <name>$PROJ_DIR$\..\Source\Dev_ADS1x9x.c</name>
     </file>
     <file>
-      <name>$PROJ_DIR$\..\Source\Dev_ADS1x9x.h</name>
+      <name>$PROJ_DIR$\..\Source\Dev_ADS1x9x.H</name>
     </file>
     <file>
       <name>$PROJ_DIR$\..\Source\hal_spi_ADS.c</name>
@@ -6401,22 +6400,10 @@
       <name>$PROJ_DIR$\..\Source\OSAL_CMTechEEGMonitor.c</name>
     </file>
     <file>
-      <name>$PROJ_DIR$\..\Source\QRSDET.H</name>
-    </file>
-    <file>
-      <name>$PROJ_DIR$\..\Source\QRSDET2.CPP</name>
-    </file>
-    <file>
-      <name>$PROJ_DIR$\..\Source\QRSFILT.CPP</name>
-    </file>
-    <file>
-      <name>$PROJ_DIR$\..\Source\QRSFILT.H</name>
-    </file>
-    <file>
       <name>$PROJ_DIR$\..\Source\Service_Battery.c</name>
     </file>
     <file>
-      <name>$PROJ_DIR$\..\Source\service_battery.h</name>
+      <name>$PROJ_DIR$\..\Source\Service_Battery.h</name>
     </file>
     <file>
       <name>$PROJ_DIR$\..\Source\Service_DevInfo.c</name>
@@ -6425,16 +6412,10 @@
       <name>$PROJ_DIR$\..\Source\Service_DevInfo.h</name>
     </file>
     <file>
-      <name>$PROJ_DIR$\..\Source\Service_Ecg.c</name>
+      <name>$PROJ_DIR$\..\Source\Service_EEG.c</name>
     </file>
     <file>
-      <name>$PROJ_DIR$\..\Source\service_ecg.h</name>
-    </file>
-    <file>
-      <name>$PROJ_DIR$\..\Source\Service_EEGMonitor.c</name>
-    </file>
-    <file>
-      <name>$PROJ_DIR$\..\Source\Service_EEGMonitor.h</name>
+      <name>$PROJ_DIR$\..\Source\Service_EEG.h</name>
     </file>
   </group>
   <group>
