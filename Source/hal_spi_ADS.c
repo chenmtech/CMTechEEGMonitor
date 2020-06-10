@@ -1,24 +1,58 @@
 
 #include "hal_spi_ADS.h"
 
+static void setADSCtrlPin(); //set ctrl pins for the ADS chip, e.g. DRDY, START, CS, PWDN
+static void setADSSpiPin();  //set SPI pin for the ADS chip. here use SPI 1, alt.2，that is：MI:P17, MO:P16, SCLK:P15
 
+//ADS chip initialization
+extern void SPI_ADS_Init()
+{
+  setADSCtrlPin();
+  setADSSpiPin();
+}
 
+// send one byte data, return the sent byte
+extern uint8 SPI_ADS_SendByte(const uint8 data)
+{
+  SPI_SEND(data); 
+  while (!U1TX_BYTE);
+  U1TX_BYTE = 0;
+  return (U1DBUF);
+}
 
+// read one byte data
+extern uint8 SPI_ADS_ReadByte()
+{
+  return SPI_ADS_SendByte(ADS_DUMMY_CHAR);
+}
 
-/*
- * 局部函数
-*/
+// send a frame data in pBuffer
+extern void SPI_ADS_SendFrame(const uint8* pBuffer, uint16 size)
+{
+  uint16 i = 0;
+  for (i = 0; i < size; i++){
+    SPI_SEND(pBuffer[i]);
+    while (!SPITXDONE);
+    U1TX_BYTE = 0;
+  }  
+  return;
+}
 
-//ADS芯片控制IO的设置, 如DRDY, START, CS, PWDN等
-static void spi_setupADS();
+// read a frame data to pBuffer
+extern void SPI_ADS_ReadFrame(uint8* pBuffer, uint16 size)
+{
+  uint16 i = 0;
+  for (i = 0; i < size; i++){
+    SPI_SEND(ADS_DUMMY_CHAR);
+    while (!SPITXDONE);
+    U1TX_BYTE = 0;
+    pBuffer[i] = U1DBUF;
+  } 
+  return; 
+}
 
-//SPI通信相关设置，采用SPI 1, alt.2，即：MI:P17, MO:P16, SCLK:P15
-static void spi_setupSPI();
-
-
-
-//ADS芯片控制IO的设置, 如DRDY, START, CS, PWDN等
-static void spi_setupADS()
+//
+static void setADSCtrlPin()
 {
   //P0.1 DRDY管脚配置  
   //先关P0.1即DRDY中断
@@ -52,8 +86,8 @@ static void spi_setupADS()
   P0IE = 1;           // P0 interrupt enable
 }
 
-//SPI通信相关设置，采用SPI 1, alt.2，即：MI:P17, MO:P16, SCLK:P15
-static void spi_setupSPI()
+//
+static void setADSSpiPin()
 {    
   //SPI 1 管脚配置
   P1SEL |= ((1<<5)|(1<<6)|(1<<7)); //P1.5 SCLK、P1.6 MOSI和P1.7 MISO为外设
@@ -73,71 +107,14 @@ static void spi_setupSPI()
   U1CSR = 0x00; //SPI 1 master mode
   
   // SPI时钟频率为512KHz
-  U1GCR = 0x6E; // CPOL = 0, CPHA = 1, order = MSB, BAUD_E = 14
-  U1BAUD = 0;   //BAUD_M = 0, SCLK = 512KHz
+  //U1GCR = 0x6E; // CPOL = 0, CPHA = 1, order = MSB, BAUD_E = 14
+  //U1BAUD = 0;   //BAUD_M = 0, SCLK = 512KHz
+  
+  // SPI时钟频率为1MHz
+  U1GCR = 0x6F; // CPOL = 0, CPHA = 1, order = MSB, BAUD_E = 15
+  U1BAUD = 0x00;   //BAUD_M = 0, SCLK = 1MHz  
   
   //U1DBUF = 0x00;
 }
 
-
-
-
-
-
-
-
-
-
-
-/*
- * 公共函数
-*/
-
-//SPI初始化
-extern void SPI_ADS_Init()
-{
-  spi_setupADS();
-  spi_setupSPI();
-}
-
-
-//发送单字节
-extern uint8 SPI_ADS_SendByte(const uint8 data)
-{
-  SPI_SEND(data); 
-  while (!SPITXDONE);
-  U1TX_BYTE = 0;
-  return (U1DBUF);
-}
-
-// 读单个字节
-extern uint8 SPI_ADS_ReadByte()
-{
-  return SPI_ADS_SendByte(ADS_DUMMY_CHAR);
-}
-
-//发送指定大小的帧
-extern void SPI_ADS_SendFrame(const uint8* pBuffer, uint16 size)
-{
-  uint16 i = 0;
-  for (i = 0; i < size; i++){
-    SPI_SEND(pBuffer[i]);
-    while (!SPITXDONE);
-    U1TX_BYTE = 0;
-  }  
-  return;
-}
-
-//读指定大小的帧
-extern void SPI_ADS_ReadFrame(uint8* pBuffer, uint16 size)
-{
-  uint16 i = 0;
-  for (i = 0; i < size; i++){
-    SPI_SEND(ADS_DUMMY_CHAR);
-    while (!SPITXDONE);
-    U1TX_BYTE = 0;
-    pBuffer[i] = U1DBUF;
-  } 
- return; 
-}
 

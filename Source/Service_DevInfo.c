@@ -77,7 +77,7 @@ static uint8 devInfoSystemId[DEVINFO_SYSTEM_ID_LEN] = {0, 0, 0, 0, 0, 0, 0, 0};
 
 // Model Number String characteristic
 static uint8 devInfoModelNumberProps = GATT_PROP_READ;
-static const uint8 devInfoModelNumber[] = "CMECGMonitor1.0";
+static const uint8 devInfoModelNumber[] = "CMTempHumid1.0";
 
 // Manufacturer Name String characteristic
 static uint8 devInfoMfrNameProps = GATT_PROP_READ;

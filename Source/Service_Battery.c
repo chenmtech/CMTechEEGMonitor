@@ -6,43 +6,35 @@
 #include "gatt.h"
 #include "gatt_uuid.h"
 #include "gattservapp.h"
-#include "cmutil.h"
-
+#include "hal_adc.h"
 #include "Service_Battery.h"
 
-#include "hal_adc.h"
 
-/*
-* 常量
-*/
-// 产生服务和特征的128位UUID
-// 电池电量服务UUID
-CONST uint8 batteryServUUID[ATT_UUID_SIZE] =
+// service and charecteristic UUID
+// battery service UUID
+CONST uint8 batteryServUUID[ATT_BT_UUID_SIZE] =
 { 
-  CM_UUID(BATTERY_SERV_UUID)
+  LO_UINT16(BATTERY_SERV_UUID), HI_UINT16(BATTERY_SERV_UUID)
 };
 
-// 电池电量数据UUID
-CONST uint8 batteryDataUUID[ATT_UUID_SIZE] =
+// battery level UUID
+CONST uint8 batteryLevelUUID[ATT_BT_UUID_SIZE] =
 { 
-  CM_UUID(BATTERY_DATA_UUID)
+  LO_UINT16(BATTERY_LEVEL_UUID), HI_UINT16(BATTERY_LEVEL_UUID)
 };
 
 
-/*
-* 局部变量
-*/
-// 电池电量服务属性值
-static CONST gattAttrType_t batteryService = { ATT_UUID_SIZE, batteryServUUID };
+static CONST gattAttrType_t batteryService = { ATT_BT_UUID_SIZE, batteryServUUID };
+static uint8 batteryLevelProps = GATT_PROP_READ | GATT_PROP_NOTIFY;
+static uint8 batteryLevel = 100;
+static attHandleValueNoti_t battNoti;
+static gattCharCfg_t batteryLevelConfig[GATT_MAX_NUM_CONN];
 
-// 电池电量数据的相关属性：可读
-static uint8 batteryDataProps = GATT_PROP_READ;
-static uint8 batteryData = 0;
 
-// 服务的属性表
+// attribute table
 static gattAttribute_t batteryServAttrTbl[] = 
 {
-  // battery 服务
+  // battery service
   { 
     { ATT_BT_UUID_SIZE, primaryServiceUUID }, /* type */
     GATT_PERMIT_READ,                         /* permissions */
@@ -50,54 +42,121 @@ static gattAttribute_t batteryServAttrTbl[] =
     (uint8 *)&batteryService                  /* pValue */
   },
 
-    // 电池电量数据特征声明
+    // battery level
     { 
       { ATT_BT_UUID_SIZE, characterUUID },
       GATT_PERMIT_READ, 
       0,
-      &batteryDataProps 
+      &batteryLevelProps 
     },
 
-      // 电池电量数据特征值
+      // 
       { 
-        { ATT_UUID_SIZE, batteryDataUUID },
+        { ATT_BT_UUID_SIZE, batteryLevelUUID },
         GATT_PERMIT_READ, 
         0, 
-        &batteryData 
-      },
+        (uint8*)&batteryLevel 
+      }, 
       
+      // 
+      {
+        { ATT_BT_UUID_SIZE, clientCharCfgUUID },
+        GATT_PERMIT_READ | GATT_PERMIT_WRITE,
+        0,
+        (uint8 *)batteryLevelConfig
+      },
 };
 
+// save the instance of the callback struct in the application
+static BattServiceCBs_t *battService_AppCBs = NULL;
 
-
-
-/*
-* 局部函数
-*/
-
-// 服务给协议栈的回调函数
-// 读属性回调
-static uint8 battery_ReadAttrCB( uint16 connHandle, gattAttribute_t *pAttr, 
+static uint8 readAttrCB( uint16 connHandle, gattAttribute_t *pAttr, 
                             uint8 *pValue, uint8 *pLen, uint16 offset, uint8 maxLen );
-// 写属性回调
-static bStatus_t battery_WriteAttrCB( uint16 connHandle, gattAttribute_t *pAttr,
+static bStatus_t writeAttrCB( uint16 connHandle, gattAttribute_t *pAttr,
                                  uint8 *pValue, uint8 len, uint16 offset );
-// 连接状态改变回调
-static void battery_HandleConnStatusCB( uint16 connHandle, uint8 changeType );
+static void handleConnStatusCB( uint16 connHandle, uint8 changeType );
 
-static uint8 battery_Measure(); 
+static uint8 batteryMeasure(); // measure the percent of the battery level
+static bStatus_t batteryNotify(uint16 connHandle); // send the notification of the battery level
 
-
-// 服务给协议栈的回调结构体实例
-CONST gattServiceCBs_t batteryServCBs =
+CONST gattServiceCBs_t batteryCBs =
 {
-  battery_ReadAttrCB,      // Read callback function pointer
-  battery_WriteAttrCB,     // Write callback function pointer
-  NULL                       // Authorization callback function pointer
+  readAttrCB,      // Read callback function pointer
+  writeAttrCB,     // Write callback function pointer
+  NULL             // Authorization callback function pointer
 };
 
+// add battery service
+extern bStatus_t Battery_AddService( uint32 services )
+{
+  uint8 status = SUCCESS;
 
-static uint8 battery_ReadAttrCB( uint16 connHandle, gattAttribute_t *pAttr, 
+  // Initialize Client Characteristic Configuration attributes
+  GATTServApp_InitCharCfg( INVALID_CONNHANDLE, batteryLevelConfig );
+
+  // Register with Link DB to receive link status change callback
+  VOID linkDB_Register( handleConnStatusCB );  
+  
+  if ( services & BATTERY_SERVICE )
+  {
+    // Register GATT attribute list and CBs with GATT Server App
+    status = GATTServApp_RegisterService( batteryServAttrTbl, 
+                                          GATT_NUM_ATTRS( batteryServAttrTbl ),
+                                          &batteryCBs );
+  }
+
+  return ( status );
+}
+
+// register battery service callback struct in the application
+extern bStatus_t Battery_RegisterAppCBs( BattServiceCBs_t *appCallbacks )
+{
+  battService_AppCBs = appCallbacks;
+    
+  return ( SUCCESS );
+}
+
+// get the characteristic parameter in battery service
+extern bStatus_t Battery_GetParameter( uint8 param, void *value )
+{
+  bStatus_t ret = SUCCESS;
+  
+  switch ( param )
+  {
+    // battery level
+    case BATTERY_LEVEL:
+      *((uint8*)value) = batteryLevel;
+      break;
+      
+    default:
+      ret = INVALIDPARAMETER;
+      break;
+  }
+  
+  return ( ret );
+}
+
+// measure the battery level and send a notification on the connection handle.
+extern bStatus_t Battery_MeasLevel( uint16 connHandle )
+{
+  uint8 level;
+
+  level = batteryMeasure();
+
+  // If level has gone down
+  if (level < batteryLevel)
+  {
+    // Update level
+    batteryLevel = level;
+
+    // Send a notification
+    batteryNotify(connHandle);
+  }
+
+  return SUCCESS;
+}
+
+static uint8 readAttrCB( uint16 connHandle, gattAttribute_t *pAttr, 
                             uint8 *pValue, uint8 *pLen, uint16 offset, uint8 maxLen )
 {
   bStatus_t status = SUCCESS;
@@ -116,34 +175,35 @@ static uint8 battery_ReadAttrCB( uint16 connHandle, gattAttribute_t *pAttr,
     return ( ATT_ERR_ATTR_NOT_LONG );
   }
   
-  if (utilExtractUuid16(pAttr, &uuid) == FAILURE) {
-    // Invalid handle
-    *pLen = 0;
-    return ATT_ERR_INVALID_HANDLE;
-  }
-  
-  switch ( uuid )
+  uuid = BUILD_UINT16( pAttr->type.uuid[0], pAttr->type.uuid[1] );
+
+  // Measure battery level if reading level
+  if ( uuid == BATTERY_LEVEL_UUID )
   {
-    // No need for "GATT_SERVICE_UUID" or "GATT_CLIENT_CHAR_CFG_UUID" cases;
-    // gattserverapp handles those reads
-    case BATTERY_DATA_UUID:
-      // 读电池电量值
-      *pLen = 1;
-      batteryData = battery_Measure();
-      pValue[0] = *pAttr->pValue;
-      break;
-      
-    default:
-      *pLen = 0;
-      status = ATT_ERR_ATTR_NOT_FOUND;
-      break;
-  }  
-  
-  return status;
+    uint8 level;
+
+    level = batteryMeasure();
+
+    // If level has gone down
+    if (level < batteryLevel)
+    {
+      // Update level
+      batteryLevel = level;
+    }
+
+    *pLen = 1;
+    pValue[0] = batteryLevel;
+  }
+  else
+  {
+    status = ATT_ERR_ATTR_NOT_FOUND;
+  }
+
+  return ( status );
 }
 
 
-static bStatus_t battery_WriteAttrCB( uint16 connHandle, gattAttribute_t *pAttr,
+static bStatus_t writeAttrCB( uint16 connHandle, gattAttribute_t *pAttr,
                                  uint8 *pValue, uint8 len, uint16 offset )
 {
   bStatus_t status = SUCCESS;
@@ -156,13 +216,25 @@ static bStatus_t battery_WriteAttrCB( uint16 connHandle, gattAttribute_t *pAttr,
     return ( ATT_ERR_INSUFFICIENT_AUTHOR );
   }
   
-  if (utilExtractUuid16(pAttr,&uuid) == FAILURE) {
-    // Invalid handle
-    return ATT_ERR_INVALID_HANDLE;
-  }
+  uuid = BUILD_UINT16( pAttr->type.uuid[0], pAttr->type.uuid[1]);
   
   switch ( uuid )
   {
+    // battery level CCC  
+    case GATT_CLIENT_CHAR_CFG_UUID:
+      status = GATTServApp_ProcessCCCWriteReq( connHandle, pAttr, pValue, len,
+                                              offset, GATT_CLIENT_CFG_NOTIFY );
+      
+      if ( status == SUCCESS )
+      {
+        uint16 charCfg = BUILD_UINT16( pValue[0], pValue[1] );
+
+        battService_AppCBs->pfnBattServiceCB( (charCfg == GATT_CFG_NO_OPERATION) ?
+                                BATTERY_LEVEL_NOTI_DISABLED :
+                                BATTERY_LEVEL_NOTI_ENABLED );
+      }
+      break;
+
     default:
       // Should never get here!
       status = ATT_ERR_ATTR_NOT_FOUND;
@@ -172,7 +244,7 @@ static bStatus_t battery_WriteAttrCB( uint16 connHandle, gattAttribute_t *pAttr,
   return status;
 }
 
-static void battery_HandleConnStatusCB( uint16 connHandle, uint8 changeType )
+static void handleConnStatusCB( uint16 connHandle, uint8 changeType )
 { 
   // Make sure this is not loopback connection
   if ( connHandle != LOOPBACK_CONNHANDLE )
@@ -182,103 +254,63 @@ static void battery_HandleConnStatusCB( uint16 connHandle, uint8 changeType )
          ( ( changeType == LINKDB_STATUS_UPDATE_STATEFLAGS ) && 
            ( !linkDB_Up( connHandle ) ) ) )
     { 
-      //GATTServApp_InitCharCfg( connHandle, batteryDataConfig );
+      GATTServApp_InitCharCfg( connHandle, batteryLevelConfig );
     }
   }
 }
 
-/*
- * 公共函数
-*/
-
-// 加载服务
-extern bStatus_t Battery_AddService( uint32 services )
+// measure the percent of the battery level
+static uint8 batteryMeasure()
 {
-  uint8 status = SUCCESS;
-
-  // Initialize Client Characteristic Configuration attributes
-  //GATTServApp_InitCharCfg( INVALID_CONNHANDLE, batteryDataConfig );
-
-  // Register with Link DB to receive link status change callback
-  VOID linkDB_Register( battery_HandleConnStatusCB );  
+  uint8 percent = 0;
+  HalAdcSetReference( HAL_ADC_REF_125V );
+  uint16 adc = HalAdcRead( HAL_ADC_CHANNEL_VDD, HAL_ADC_RESOLUTION_10 );
   
-  if ( services & BATTERY_SERVICE )
+  /* how to convert adc to the percent of battery level
+  // The internal reference voltage of CC2541 is 1.24V
+  // if V is input voltage, then the output adc is:
+  // adc = (V/3)/1.24*511
+  // so: 
+  // MAXadc = (3/3)/1.24*511 = 412
+  // MINadc = (2.27/3)/1.24*511 = 312 , where 2.7V is the required lowest voltage of ADS1X91, but the experiment shows 2.27V still can work
+  // then the percent value is equal to:
+  // percent = (adc - MINadc)/(MAXadc - MINadc)*100 = (adc - 312)/100*100
+  */
+  
+  if(adc >= 412)
   {
-    // Register GATT attribute list and CBs with GATT Server App
-    status = GATTServApp_RegisterService( batteryServAttrTbl, 
-                                          GATT_NUM_ATTRS( batteryServAttrTbl ),
-                                          &batteryServCBs );
+    percent = 100;
+  } 
+  else if(adc <= 312)
+  {
+    percent = 0;
   }
-
-  return ( status );
-}
-
-// 登记应用层给的回调
-extern bStatus_t Battery_RegisterAppCBs( batteryServiceCBs_t *appCallbacks )
-{
-  return ( SUCCESS );
-}
-
-// 设置本服务的特征参数
-extern bStatus_t Battery_SetParameter( uint8 param, uint8 len, void *value )
-{
-  bStatus_t ret = SUCCESS;
-
-  switch ( param )
+  else
   {
-    // 设置电池电量数据，触发Notification
-    case BATTERY_DATA:
-      if ( len == sizeof(uint8) )
-      {
-        batteryData = *((uint8*)value);
-      }
-      else
-      {
-        ret = bleInvalidRange;
-      }
-      break;
-
-    default:
-      ret = INVALIDPARAMETER;
-      break;
+    percent = (uint8)( (adc - 312) );
   }  
   
-  return ( ret );
+  return percent;
 }
 
-// 获取本服务特征参数
-extern bStatus_t Battery_GetParameter( uint8 param, void *value )
+// send the notification of the battery level
+static bStatus_t batteryNotify(uint16 connHandle)
 {
-  bStatus_t ret = SUCCESS;
-  
-  switch ( param )
+  if(linkDB_Up(connHandle))
   {
-    // 获取电池电量数据
-    case BATTERY_DATA:
-      *((uint8*)value) = batteryData;
-      break;
+    uint16 value = GATTServApp_ReadCharCfg( connHandle, batteryLevelConfig );
 
-    default:
-      ret = INVALIDPARAMETER;
-      break;
+    // If notifications enabled
+    if ( value & GATT_CLIENT_CFG_NOTIFY )
+    {
+      battNoti.handle = batteryServAttrTbl[BATTERY_LEVEL_POS].handle;
+      battNoti.len = 1;
+      battNoti.value[0] = batteryLevel;
+    
+      // Send the notification
+      return GATT_Notification( connHandle, &battNoti, FALSE );
+    }
   }
-  
-  return ( ret );
-}
-
-// 测量电池电压
-// P0_7为控制端，低电平启动，高电平截止
-// P0_6为ADC测量端
-static uint8 battery_Measure()
-{
-  
-  P0 &= ~(1<<7);
-  
-  HalAdcInit();
-  uint16 result = HalAdcRead (HAL_ADC_CHANNEL_6, HAL_ADC_RESOLUTION_14);
-  
-  P0 |= (1<<7);
-  
-  return (uint8)(result>>6);
-  //return (uint8)((result>>6)*33/128);
+     
+  return bleIncorrectMode;
 }
