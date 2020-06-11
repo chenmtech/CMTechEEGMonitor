@@ -2,8 +2,8 @@
 #include "Dev_ADS1x9x.H"
 #include "hal_mcu.h"
 #include "CMUtil.h"
-#include "CMTechEEGMonitor.h"
-    
+ 
+/*
 // all registers for outputing the test signal
 const static uint8 ECGRegs125[12] = {  
   //DEVID
@@ -31,6 +31,7 @@ const static uint8 ECGRegs125[12] = {
   //GPIO
   0x0C                      //
 };	
+*/
 
 // all registers for outputing the normal ECG signal with 250 sample rate
 const static uint8 ECGRegs250[12] = {  
@@ -60,10 +61,10 @@ const static uint8 ECGRegs250[12] = {
   0x0C                      //
 };
 
-static ADS_DataCB_t pfnADSDataCB; // callback function processing data 
+static ADS_DataCB_t pfnADSDataCB; // callback function of processing data 
 //static uint8 data[2];
 //static int16 * pEcg = (int16*)data;
-static int ecgData;
+//static int ecgData;
 
 static void execute(uint8 cmd); // execute command
 static void setRegsAsNormalECGSignal(); // set registers as outputing normal ECG signal
@@ -274,7 +275,7 @@ static void readOneSampleUsingADS1291(void)
 //   
 //  pfnADSDataCB(ecg);
 
-  uint8 data1,data2,data3;
+  uint8 hByte,mByte,lByte;
   
   SPI_SEND(ADS_DUMMY_CHAR); 
   while (!U1TX_BYTE);
@@ -291,19 +292,19 @@ static void readOneSampleUsingADS1291(void)
   SPI_SEND(ADS_DUMMY_CHAR); 
   while (!U1TX_BYTE);
   U1TX_BYTE = 0;
-  data1 = U1DBUF;
+  hByte = U1DBUF;
   
   SPI_SEND(ADS_DUMMY_CHAR); 
   while (!U1TX_BYTE);
   U1TX_BYTE = 0;  
-  data2 = U1DBUF;   
+  mByte = U1DBUF;   
   
   SPI_SEND(ADS_DUMMY_CHAR); 
   while (!U1TX_BYTE);
   U1TX_BYTE = 0;  
-  data3 = U1DBUF; 
+  lByte = U1DBUF; 
    
-  pfnADSDataCB(data1, data2, data3);
+  pfnADSDataCB(hByte, mByte, lByte);
 }
 
 /*

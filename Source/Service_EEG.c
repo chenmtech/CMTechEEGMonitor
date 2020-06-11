@@ -11,12 +11,11 @@
 #include "gattservapp.h"
 #include "CMUtil.h"
 #include "Service_EEG.h"
-#include "CMTechEEGMonitor.h"
 
 // Position of EEG data packet in attribute array
 #define EEG_PACK_VALUE_POS            2
 
-
+#define DEFAULT_SAMPLERATE 250
 
 // EEG service
 CONST uint8 EEGServUUID[ATT_UUID_SIZE] =
@@ -65,7 +64,7 @@ static uint16 eeg1mVCali = 0;
 
 // Sample Rate Characteristic
 static uint8 eegSampleRateProps = GATT_PROP_READ;
-static uint16 eegSampleRate = 250;
+static uint16 eegSampleRate = DEFAULT_SAMPLERATE;
 
 // Lead Type Characteristic
 static uint8 eegLeadTypeProps = GATT_PROP_READ;
@@ -170,7 +169,7 @@ CONST gattServiceCBs_t eegCBs =
 {
   readAttrCB,  // Read callback function pointer
   writeAttrCB, // Write callback function pointer
-  NULL                   // Authorization callback function pointer
+  NULL         // Authorization callback function pointer
 };
 
 bStatus_t EEG_AddService( uint32 services )

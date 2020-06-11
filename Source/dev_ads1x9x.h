@@ -50,7 +50,7 @@
 #define ADS1x9x_REG_RESP2               (0x000Au)
 #define ADS1x9x_REG_GPIO                (0x000Bu)
 
-typedef void (*ADS_DataCB_t)(uint8 data1, uint8 data2, uint8 data3); // callback function to handle one sample data
+typedef void (*ADS_DataCB_t)(uint8 hByte, uint8 mByte, uint8 lByte); // callback function to handle one sample data
 
 
 extern void ADS1x9x_Init(ADS_DataCB_t pfnADS_DataCB_t); // init

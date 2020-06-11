@@ -7,8 +7,8 @@
 
 
 #define EEG_START_DEVICE_EVT 0x0001      // device start event
-#define EEG_BATT_PERIODIC_EVT 0x0002     // periodic battery measurement event
-#define EEG_PACK_NOTI_EVT 0x0004 // eeg packet notification event
+#define EEG_PACK_NOTI_EVT 0x0002         // eeg packet notification event
+#define EEG_BATT_PERIODIC_EVT 0x0004     // periodic battery measurement event
 
 /*
  * Task Initialization for the BLE Application

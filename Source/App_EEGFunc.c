@@ -6,7 +6,6 @@
 #include "App_EEGFunc.h"
 #include "CMUtil.h"
 #include "Dev_ADS1x9x.h"
-#include "Service_EEGMonitor.h"
 #include "service_EEG.h"
 #include "CMTechEEGMonitor.h"
 
@@ -27,8 +26,8 @@ static uint8* pEegBuff;
 // eeg packet structure sent out
 static attHandleValueNoti_t eegNoti;
 
-static void processEegSignal(uint8 data1, uint8 data2, uint8 data3);
-static void saveEegSignal(uint8 data1, uint8 data2, uint8 data3);
+static void processEegSignal(uint8 hByte, uint8 mByte, uint8 lByte);
+static void saveEegSignal(uint8 hByte, uint8 mByte, uint8 lByte);
 //static void processTestSignal(int16 x);
 
 extern void EEGFunc_Init(uint8 taskID)
@@ -75,24 +74,27 @@ extern void EEGFunc_SendEegPacket(uint16 connHandle)
   EEG_PacketNotify( connHandle, &eegNoti );
 }
 
-static void processEegSignal(uint8 data1, uint8 data2, uint8 data3)
+static void processEegSignal(uint8 hByte, uint8 mByte, uint8 lByte)
 {
   if(eegSend) // need send ecg
   {
-    saveEegSignal(data1, data2, data3);
+    saveEegSignal(hByte, mByte, lByte);
   }
 }
 
-static void saveEegSignal(uint8 data1, uint8 data2, uint8 data3)
+static void saveEegSignal(uint8 hByte, uint8 mByte, uint8 lByte)
 {
   if(pEegBuff == eegBuff)
   {
     *pEegBuff++ = pckNum;
-    pckNum = (pckNum == EEG_MAX_PACK_NUM) ? 0 : pckNum+1;
+    if(pckNum == EEG_MAX_PACK_NUM)
+      pckNum = 0;
+    else
+      pckNum++;
   }
-  *pEegBuff++ = data1;  
-  *pEegBuff++ = data2;
-  *pEegBuff++ = data3;
+  *pEegBuff++ = lByte;  
+  *pEegBuff++ = mByte;
+  *pEegBuff++ = hByte;
   
   if(pEegBuff-eegBuff >= EEG_PACK_BYTE_NUM)
   {

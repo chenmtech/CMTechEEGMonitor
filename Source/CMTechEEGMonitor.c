@@ -42,6 +42,13 @@
 #define ADVERTISING_OFFTIME 8000 // ad offtime to wait for a next ad, units of ms
 
 // connection parameter
+/* Note: 
+ * the ios device require min_interval>=20ms, max_interval>=min_interval+20
+ * the ios device require max_interval*(1+latency)<=2s
+ * the ios device require the slave latency <=4
+ * the ios device require max_interval*(1+latency)*3 < timeout
+ * the ios device require the timeout <= 6s
+*/
 #define MIN_INTERVAL 16  // unit: 1.25ms
 #define MAX_INTERVAL 32  // unit: 1.25ms
 #define SLAVE_LATENCY 4
@@ -53,14 +60,14 @@
 #define STATUS_EEG_STOP 0x00     // eeg sampling stopped status
 #define STATUS_EEG_START 0x01    // eeg sampling started status
 
-#define HR_NOTI_PERIOD 2000 // heart rate notification period, ms
 #define BATT_NOTI_PERIOD 120000L // battery notification period, ms
-#define EEG_1MV_CALI_VALUE  160  //164  // eeg 1mV calibration value
+
+#define EEG_1MV_CALI_VALUE  40960  // eeg 1mV calibration value
 
 static uint8 taskID;   
 static uint16 gapConnHandle = INVALID_CONNHANDLE;
 static gaprole_States_t gapProfileState = GAPROLE_INIT;
-static uint8 attDeviceName[GAP_DEVICE_NAME_LEN] = "KM HRM"; // GGS device name
+static uint8 attDeviceName[GAP_DEVICE_NAME_LEN] = "KM EEG"; // GGS device name
 static uint8 status = STATUS_EEG_STOP; // ecg sampling status
 
 // advertise data
@@ -120,8 +127,8 @@ static EEGServiceCBs_t eegServCBs =
 
 static void processOSALMsg( osal_event_hdr_t *pMsg ); // OSAL message process function
 static void initIOPin(); // initialize IO pins
-static void startEegSampling( void ); // start eeg sampling
-static void stopEegSampling( void ); // stop eeg sampling
+static void startEEGSampling( void ); // start eeg sampling
+static void stopEEGSampling( void ); // stop eeg sampling
 
 extern void EEG_Init( uint8 task_id )
 { 
@@ -148,15 +155,11 @@ extern void EEG_Init( uint8 task_id )
 
     GAP_SetParamValue( TGAP_CONN_PAUSE_PERIPHERAL, CONN_PAUSE_PERIPHERAL ); 
     
-    // set the connection parameter according to the ecg lock status
-    uint16 desired_min_interval; // units of 1.25ms, Note: the ios device require min_interval>=20ms, max_interval>=min_interval+20
-    uint16 desired_max_interval; // units of 1.25ms, Note: the ios device require max_interval*(1+latency)<=2s
-    uint16 desired_slave_latency; // Note: the ios device require the slave latency <=4
-    uint16 desired_conn_timeout; // units of 10ms, Note: the ios device require the timeout <= 6s
-    desired_min_interval = MIN_INTERVAL;
-    desired_max_interval = MAX_INTERVAL;
-    desired_slave_latency = SLAVE_LATENCY;
-    desired_conn_timeout = CONNECT_TIMEOUT; 
+    // set the connection parameter
+    uint16 desired_min_interval = MIN_INTERVAL;
+    uint16 desired_max_interval = MAX_INTERVAL;
+    uint16 desired_slave_latency = SLAVE_LATENCY; 
+    uint16 desired_conn_timeout = CONNECT_TIMEOUT;
     GAPRole_SetParameter( GAPROLE_MIN_CONN_INTERVAL, sizeof( uint16 ), &desired_min_interval );
     GAPRole_SetParameter( GAPROLE_MAX_CONN_INTERVAL, sizeof( uint16 ), &desired_max_interval );
     GAPRole_SetParameter( GAPROLE_SLAVE_LATENCY, sizeof( uint16 ), &desired_slave_latency );
@@ -263,6 +266,16 @@ extern uint16 EEG_ProcessEvent( uint8 task_id, uint16 events )
     return ( events ^ EEG_START_DEVICE_EVT );
   }
   
+  if ( events & EEG_PACK_NOTI_EVT )
+  {
+    if (gapProfileState == GAPROLE_CONNECTED)
+    {
+      EEGFunc_SendEegPacket(gapConnHandle);
+    }
+
+    return (events ^ EEG_PACK_NOTI_EVT);
+  } 
+  
   if ( events & EEG_BATT_PERIODIC_EVT )
   {
     if (gapProfileState == GAPROLE_CONNECTED)
@@ -273,16 +286,6 @@ extern uint16 EEG_ProcessEvent( uint8 task_id, uint16 events )
 
     return (events ^ EEG_BATT_PERIODIC_EVT);
   }
-  
-  if ( events & EEG_PACK_NOTI_EVT )
-  {
-    if (gapProfileState == GAPROLE_CONNECTED)
-    {
-      EEGFunc_SendEegPacket(gapConnHandle);
-    }
-
-    return (events ^ EEG_PACK_NOTI_EVT);
-  } 
   
   // Discard unknown events
   return 0;
@@ -312,15 +315,17 @@ static void gapStateCB( gaprole_States_t newState )
     ADS1x9x_StandBy();  
     delayus(1000);
   }
+  
   // disconnected
   else if(gapProfileState == GAPROLE_CONNECTED && 
             newState != GAPROLE_CONNECTED)
   {
-    stopEegSampling();
+    stopEEGSampling();
     EEGFunc_SetEegSending(false);
     VOID osal_stop_timerEx( taskID, EEG_BATT_PERIODIC_EVT );
     ADS1x9x_PowerDown();
   }
+  
   // if started
   else if (newState == GAPROLE_STARTED)
   {
@@ -348,13 +353,13 @@ static void eegServiceCB( uint8 event )
   switch (event)
   {
     case EEG_PACK_NOTI_ENABLED:
-      startEegSampling();
+      startEEGSampling();
       EEGFunc_SetEegSending(true);
       break;
         
     case EEG_PACK_NOTI_DISABLED:
       EEGFunc_SetEegSending(false);
-      stopEegSampling();
+      stopEEGSampling();
       break;
       
     default:
@@ -364,7 +369,7 @@ static void eegServiceCB( uint8 event )
 }
 
 // start eeg Sampling
-static void startEegSampling( void )
+static void startEEGSampling( void )
 {  
   if(status == STATUS_EEG_STOP) 
   {
@@ -374,7 +379,7 @@ static void startEegSampling( void )
 }
 
 // stop eeg Sampling
-static void stopEegSampling( void )
+static void stopEEGSampling( void )
 {  
   if(status == STATUS_EEG_START)
   {
